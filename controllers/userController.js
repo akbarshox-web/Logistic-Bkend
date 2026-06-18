@@ -15,22 +15,47 @@ const googleAuth = async (req, res) => {
       return;
     }
 
-    const { credential } = req.body;
+    const { credential, access_token } = req.body;
 
-    if (!credential) {
-      res.status(400).json({ message: 'Google credential topilmadi' });
+    let email, name, picture;
+
+    if (credential) {
+      // Credential (JWT) dan foydalanish
+      const decoded = jwt.decode(credential);
+      if (!decoded || !decoded.email) {
+        res.status(400).json({ message: 'Noto\'g\'ri Google token' });
+        return;
+      }
+      email = decoded.email;
+      name = decoded.name;
+      picture = decoded.picture;
+    } else if (access_token) {
+      // Access token dan foydalanish - Google userinfo endpoint
+      const https = await import('node:https');
+      const userinfoResponse = await new Promise((resolve, reject) => {
+        const req = https.get(
+          `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${access_token}`,
+          (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve(JSON.parse(data)));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+      if (!userinfoResponse.email) {
+        res.status(400).json({ message: 'Google userinfo olishda xato' });
+        return;
+      }
+      email = userinfoResponse.email;
+      name = userinfoResponse.name;
+      picture = userinfoResponse.picture;
+    } else {
+      res.status(400).json({ message: 'Google credential yoki access_token topilmadi' });
       return;
     }
-
-    // Decode Google JWT token
-    const decoded = jwt.decode(credential);
-
-    if (!decoded || !decoded.email) {
-      res.status(400).json({ message: 'Noto\'g\'ri Google token' });
-      return;
-    }
-
-    const { email, name, picture } = decoded;
 
     // Check if user exists
     let user = await User.findOne({ email });
