@@ -9,20 +9,29 @@ connectDB();
 
 const importData = async () => {
   try {
+    // Faqat userlarni o'chiradi (partnerlar saqlanib qoladi)
     await User.deleteMany();
 
+    // ✅ User.create() ishlatilganda pre('save') hook ishlaydi
+    // ya'ni parol avtomatik bcrypt bilan hash qilinadi
     const adminUser = await User.create({
       name: 'Akbarshox Admin',
-      email: 'ergashevakbarshox2010@gmail.com',
-      password: 'admin123password', // Bu parolni keyinchalik o'zgartirish tavsiya etiladi
+      email: process.env.ADMIN_EMAIL || 'sunnatmaxkambayev53@gmail.com',
+      password: process.env.SEED_ADMIN_PASSWORD || 'Admin@12345!',
       role: 'superadmin',
       isVerified: true
     });
 
-    console.log('Ma\'lumotlar muvaffaqiyatli import qilindi!');
+    console.log('✅ Superadmin yaratildi!');
+    console.log(`   Nomi: ${adminUser.name}`);
+    console.log(`   Email: ${adminUser.email}`);
+    console.log(`   Role: ${adminUser.role}`);
+    console.log('');
+    console.log('⚠️  Parolni .env da SEED_ADMIN_PASSWORD orqali o\'zgartiring!');
+
     process.exit();
   } catch (error) {
-    console.error(`${error}`);
+    console.error(`❌ Xato: ${error.message}`);
     process.exit(1);
   }
 };
@@ -30,10 +39,10 @@ const importData = async () => {
 const destroyData = async () => {
   try {
     await User.deleteMany();
-    console.log('Ma\'lumotlar o\'chirildi!');
+    console.log('🗑️  Barcha foydalanuvchilar o\'chirildi!');
     process.exit();
   } catch (error) {
-    console.error(`${error}`);
+    console.error(`❌ Xato: ${error.message}`);
     process.exit(1);
   }
 };

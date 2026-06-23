@@ -3,7 +3,6 @@ import generateToken from '../utils/generateToken.js';
 import sendEmail from '../utils/sendEmail.js';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 
 // @desc    Google Auth user & get token
 // @route   POST /api/users/google
@@ -16,11 +15,9 @@ const googleAuth = async (req, res) => {
     }
 
     const { credential, access_token } = req.body;
-
-    let email, name, picture;
+    let email, name;
 
     if (credential) {
-      // Credential (JWT) dan foydalanish
       const decoded = jwt.decode(credential);
       if (!decoded || !decoded.email) {
         res.status(400).json({ message: 'Noto\'g\'ri Google token' });
@@ -28,9 +25,7 @@ const googleAuth = async (req, res) => {
       }
       email = decoded.email;
       name = decoded.name;
-      picture = decoded.picture;
     } else if (access_token) {
-      // Access token dan foydalanish - Google userinfo endpoint
       const https = await import('node:https');
       const userinfoResponse = await new Promise((resolve, reject) => {
         const req = https.get(
@@ -51,37 +46,31 @@ const googleAuth = async (req, res) => {
       }
       email = userinfoResponse.email;
       name = userinfoResponse.name;
-      picture = userinfoResponse.picture;
     } else {
       res.status(400).json({ message: 'Google credential yoki access_token topilmadi' });
       return;
     }
 
-    // Check if user exists
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create new user with Google
       let role = 'user';
       if (email === process.env.ADMIN_EMAIL) {
         role = 'superadmin';
       }
-
-      // Generate random password for Google users
       const randomPassword = Math.random().toString(36).slice(-16) + 'Google!2024';
-
       user = await User.create({
         name: name || email.split('@')[0],
         email,
         password: randomPassword,
         role,
-        isVerified: true // Google users are already verified
+        isVerified: true
       });
     }
 
     if (!user.isVerified) {
+      await User.updateOne({ _id: user._id }, { isVerified: true });
       user.isVerified = true;
-      await user.save();
     }
 
     generateToken(res, user._id);
@@ -103,14 +92,12 @@ const googleAuth = async (req, res) => {
 // @access  Public
 const authUser = async (req, res) => {
   try {
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       res.status(503).json({ message: "Server xizmat ko'rsatmaydi. Iltimos keyinroq urinib ko'ring." });
       return;
     }
 
     const { email, password } = req.body;
-
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
@@ -118,9 +105,7 @@ const authUser = async (req, res) => {
         res.status(401).json({ message: 'Iltimos, avval emailingizni tasdiqlang' });
         return;
       }
-
       generateToken(res, user._id);
-
       res.json({
         _id: user._id,
         name: user.name,
@@ -141,14 +126,12 @@ const authUser = async (req, res) => {
 // @access  Public
 const registerUser = async (req, res) => {
   try {
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       res.status(503).json({ message: "Server xizmat ko'rsatmaydi. Iltimos keyinroq urinib ko'ring." });
       return;
     }
 
     const { name, email, password } = req.body;
-
     const userExists = await User.findOne({ email });
 
     if (userExists) {
@@ -156,11 +139,9 @@ const registerUser = async (req, res) => {
       return;
     }
 
-    // Generate 6-digit code
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const verificationExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+    const verificationExpire = Date.now() + 10 * 60 * 1000;
 
-    // Determine role
     let role = 'user';
     if (email === process.env.ADMIN_EMAIL) {
       role = 'superadmin';
@@ -195,14 +176,18 @@ const registerUser = async (req, res) => {
             </div>
           `
         });
-
         res.status(201).json({
           message: 'Tasdiqlash kodi emailingizga yuborildi',
           email: user.email
         });
-      } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Email yuborishda xatolik yuz berdi' });
+      } catch (emailError) {
+        console.error('Email xatosi:', emailError);
+        // Email yuborilmasa ham user yaratilgan, kodni consoldan oling
+        res.status(201).json({
+          message: 'Ro\'yxatdan o\'tdingiz! Email yuborishda xato, kodni consoldan oling.',
+          email: user.email,
+          devCode: process.env.NODE_ENV !== 'production' ? verificationCode : undefined
+        });
       }
     } else {
       res.status(400).json({ message: 'Noto\'g\'ri foydalanuvchi ma\'lumotlari' });
@@ -218,7 +203,6 @@ const registerUser = async (req, res) => {
 // @access  Public
 const verifyEmail = async (req, res) => {
   try {
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       res.status(503).json({ message: "Server xizmat ko'rsatmaydi. Iltimos keyinroq urinib ko'ring." });
       return;
@@ -233,10 +217,14 @@ const verifyEmail = async (req, res) => {
     });
 
     if (user) {
-      user.isVerified = true;
-      user.verificationCode = undefined;
-      user.verificationExpire = undefined;
-      await user.save();
+      await User.updateOne(
+        { _id: user._id },
+        {
+          isVerified: true,
+          verificationCode: undefined,
+          verificationExpire: undefined
+        }
+      );
 
       generateToken(res, user._id);
 
@@ -269,14 +257,14 @@ const logoutUser = (req, res) => {
 
 // @desc    Get all users
 // @route   GET /api/users
-// @access  Private/Admin
+// @access  Private/Superadmin
 const getUsers = async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
       res.status(503).json({ message: "Server xizmat ko'rsatmaydi" });
       return;
     }
-    const users = await User.find({});
+    const users = await User.find({}).select('-password -verificationCode -verificationExpire');
     res.json(users);
   } catch (error) {
     console.error('Auth Error:', error);
@@ -286,7 +274,7 @@ const getUsers = async (req, res) => {
 
 // @desc    Delete user
 // @route   DELETE /api/users/:id
-// @access  Private/Admin
+// @access  Private/Superadmin
 const deleteUser = async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
@@ -322,7 +310,6 @@ const resendVerificationCode = async (req, res) => {
     }
 
     const { email } = req.body;
-
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -335,13 +322,16 @@ const resendVerificationCode = async (req, res) => {
       return;
     }
 
-    // Generate new 6-digit code
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const verificationExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+    const verificationExpire = Date.now() + 10 * 60 * 1000;
 
-    user.verificationCode = verificationCode;
-    user.verificationExpire = verificationExpire;
-    await user.save();
+    await User.updateOne(
+      { _id: user._id },
+      {
+        verificationCode: verificationCode,
+        verificationExpire: verificationExpire
+      }
+    );
 
     try {
       await sendEmail({
@@ -366,9 +356,13 @@ const resendVerificationCode = async (req, res) => {
         message: 'Yangi tasdiqlash kodi emailingizga yuborildi',
         email: user.email
       });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: 'Email yuborishda xatolik yuz berdi' });
+    } catch (emailError) {
+      console.error('Email xatosi:', emailError);
+      res.json({
+        message: 'Email yuborishda xato, kodni consoldan oling.',
+        email: user.email,
+        devCode: process.env.NODE_ENV !== 'production' ? verificationCode : undefined
+      });
     }
   } catch (error) {
     console.error('Auth Error:', error);
@@ -385,6 +379,12 @@ const getCurrentUser = async (req, res) => {
       res.status(503).json({ message: "Server xizmat ko'rsatmaydi" });
       return;
     }
+
+    if (!req.user || !req.user._id) {
+      res.status(401).json({ message: 'Foydalanuvchi topilmadi' });
+      return;
+    }
+
     const user = await User.findById(req.user._id).select('-password -verificationCode -verificationExpire');
     if (user) {
       res.json(user);
