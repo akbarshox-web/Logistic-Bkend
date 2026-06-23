@@ -16,7 +16,7 @@ connectDB();
 
 const app = express();
 
-// Security
+
 app.use(helmet());
 app.use(cookieParser());
 app.use(express.json());
