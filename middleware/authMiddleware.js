@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Driver from '../models/Driver.js';
 
 const protect = async (req, res, next) => {
   const token = req.cookies.jwt;
@@ -11,13 +12,19 @@ const protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.userId).select('-password');
 
-    if (!req.user) {
+    // ✅ FIX: avval User, keyin Driver modelidan qidirish
+    let user = await User.findById(decoded.userId).select('-password');
+    if (!user) {
+      user = await Driver.findById(decoded.userId).select('-password');
+    }
+
+    if (!user) {
       res.status(401).json({ message: 'Foydalanuvchi topilmadi' });
       return;
     }
 
+    req.user = user;
     next();
   } catch (error) {
     res.status(401).json({ message: "Token xato yoki muddati o'tgan" });

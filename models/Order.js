@@ -32,23 +32,19 @@ const orderSchema = new mongoose.Schema({
     default: 'Yangi'
   },
 
-  // Tracking ID
+  // Tracking ID — default orqali avtomatik generatsiya (unique validation xatosini oldini oladi)
   trackingId: {
     type: String,
-    unique: true
+    unique: true,
+    default: function() {
+      return 'LOG' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 1000);
+    }
   },
 
   // Narx
   price: { type: Number, default: 0 },
 
 }, { timestamps: true });
-
-// Tracking ID avtomatik generatsiya
-orderSchema.pre('save', async function() {
-  if (!this.trackingId) {
-    this.trackingId = 'LOG' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 100);
-  }
-});
 
 const Order = mongoose.model('Order', orderSchema);
 export default Order;

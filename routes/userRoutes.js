@@ -8,7 +8,8 @@ import {
   deleteUser,
   verifyEmail,
   resendVerificationCode,
-  getCurrentUser
+  getCurrentUser,
+  adminCreateUser
 } from '../controllers/userController.js';
 import { protect, admin } from '../middleware/authMiddleware.js';
 
@@ -20,6 +21,7 @@ router.post('/logout', logoutUser);
 router.post('/verify', verifyEmail);
 router.post('/resend', resendVerificationCode);
 router.post('/', registerUser);
+router.post('/admin-create', protect, admin, adminCreateUser);
 router.get('/me', protect, getCurrentUser);
 router.get('/', protect, admin, getUsers);
 router.route('/:id')

@@ -198,6 +198,53 @@ const registerUser = async (req, res) => {
   }
 };
 
+// @desc    Admin tomonidan yangi admin/user yaratish
+// @route   POST /api/users/admin-create
+// @access  Private/Superadmin
+const adminCreateUser = async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      res.status(503).json({ message: "Server xizmat ko'rsatmaydi" });
+      return;
+    }
+
+    const { name, email, password, role } = req.body;
+
+    if (!name || !email || !password) {
+      res.status(400).json({ message: "Ism, email va parol talab qilinadi" });
+      return;
+    }
+
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      res.status(400).json({ message: 'Bu email allaqachon mavjud' });
+      return;
+    }
+
+    const validRoles = ['admin', 'user'];
+    const finalRole = validRoles.includes(role) ? role : 'user';
+
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: finalRole,
+      isVerified: true
+    });
+
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isVerified: user.isVerified
+    });
+  } catch (error) {
+    console.error('Admin Create Error:', error);
+    res.status(500).json({ message: 'Server xatoligi', error: error.message });
+  }
+};
+
 // @desc    Verify email with OTP
 // @route   POST /api/users/verify
 // @access  Public
@@ -406,5 +453,6 @@ export {
   deleteUser,
   verifyEmail,
   resendVerificationCode,
-  getCurrentUser
+  getCurrentUser,
+  adminCreateUser
 };

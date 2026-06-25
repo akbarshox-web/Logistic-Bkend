@@ -15,11 +15,17 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// ✅ FIX: async/await ishlatildi, next() chaqirilmaydi
-userSchema.pre('save', async function() {
-  if (!this.isModified('password')) return;
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+// ✅ FIX: Mongoose v9 da async hook ishlatish uchun next() shart emas,
+// lekin xavfsizlik uchun try/finally bilan o'rab oldik
+userSchema.pre('save', async function(next) {
+  try {
+    if (!this.isModified('password')) return next();
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 const User = mongoose.model('User', userSchema);
