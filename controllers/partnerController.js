@@ -8,13 +8,13 @@ const getPartners = async (req, res) => {
   try {
     // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
-      res.json([]);
-      return;
+      return res.json({ success: true, data: [] });
     }
-    const partners = await Partner.find({});
-    res.json(partners);
+    const partners = await Partner.find({}).sort({ createdAt: -1 });
+    res.json({ success: true, data: partners });
   } catch (error) {
-    res.json([]);
+    console.error('Get partners error:', error);
+    res.json({ success: true, data: [] });
   }
 };
 
@@ -25,16 +25,21 @@ const createPartner = async (req, res) => {
   try {
     const { name, logo, website } = req.body;
 
+    if (!name || !logo) {
+      return res.status(400).json({ success: false, message: 'Nom va logo kiritilishi shart' });
+    }
+
     const partner = new Partner({
       name,
       logo,
-      website
+      website: website || ''
     });
 
     const createdPartner = await partner.save();
-    res.status(201).json(createdPartner);
+    res.status(201).json({ success: true, data: createdPartner });
   } catch (error) {
-    res.status(500).json({ message: 'Server xatoligi' });
+    console.error('Create partner error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi' });
   }
 };
 
@@ -47,12 +52,13 @@ const deletePartner = async (req, res) => {
 
     if (partner) {
       await Partner.deleteOne({ _id: partner._id });
-      res.json({ message: 'Hamkor o\'chirildi' });
+      res.json({ success: true, message: 'Hamkor o\'chirildi' });
     } else {
-      res.status(404).json({ message: 'Hamkor topilmadi' });
+      res.status(404).json({ success: false, message: 'Hamkor topilmadi' });
     }
   } catch (error) {
-    res.status(500).json({ message: 'Server xatoligi' });
+    console.error('Delete partner error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi' });
   }
 };
 

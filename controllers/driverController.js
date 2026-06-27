@@ -1,14 +1,33 @@
 import Driver from '../models/Driver.js';
+import Order from '../models/Order.js';
+import mongoose from 'mongoose';
+
+// ✅ DB holatini tekshirish helper
+const checkDB = (res) => {
+  if (mongoose.connection.readyState !== 1) {
+    res.status(503).json({
+      success: false,
+      message: "Ma'lumotlar bazasi bilan aloqa yo'q"
+    });
+    return false;
+  }
+  return true;
+};
 
 // @desc    Barcha driverlar
 // @route   GET /api/drivers
 // @access  Private/Admin
 const getDrivers = async (req, res) => {
   try {
+    if (!checkDB(res)) return;
     const drivers = await Driver.find({}).select('-password').sort({ createdAt: -1 });
-    res.json(drivers);
+    res.json({
+      success: true,
+      data: drivers
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Server xatoligi' });
+    console.error('Get drivers error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi' });
   }
 };
 
@@ -17,15 +36,23 @@ const getDrivers = async (req, res) => {
 // @access  Private/Admin
 const createDriver = async (req, res) => {
   try {
+    if (!checkDB(res)) return;
+
     const { name, email, phone, password, licenseNumber, vehicleType } = req.body;
 
     if (!name || !email || !phone || !password) {
-      return res.status(400).json({ message: "Barcha majburiy maydonlarni to'ldiring" });
+      return res.status(400).json({
+        success: false,
+        message: "Barcha majburiy maydonlarni to'ldiring"
+      });
     }
 
     const exists = await Driver.findOne({ email });
     if (exists) {
-      return res.status(400).json({ message: 'Bu email allaqachon mavjud' });
+      return res.status(400).json({
+        success: false,
+        message: 'Bu email allaqachon mavjud'
+      });
     }
 
     const driver = await Driver.create({
@@ -35,27 +62,33 @@ const createDriver = async (req, res) => {
     });
 
     res.status(201).json({
-      _id: driver._id,
-      name: driver.name,
-      email: driver.email,
-      phone: driver.phone,
-      licenseNumber: driver.licenseNumber,
-      vehicleType: driver.vehicleType,
-      status: driver.status,
+      success: true,
+      data: {
+        _id: driver._id,
+        name: driver.name,
+        email: driver.email,
+        phone: driver.phone,
+        licenseNumber: driver.licenseNumber,
+        vehicleType: driver.vehicleType,
+        status: driver.status,
+      }
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server xatoligi', error: error.message });
+    console.error('Create driver error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi', error: error.message });
   }
 };
 
-// @desc    Driver holatini yangilash
+// @desc    Driver yangilash (holat, ma'lumotlar)
 // @route   PUT /api/drivers/:id
 // @access  Private/Admin
 const updateDriver = async (req, res) => {
   try {
+    if (!checkDB(res)) return;
+
     const driver = await Driver.findById(req.params.id);
     if (!driver) {
-      return res.status(404).json({ message: 'Haydovchi topilmadi' });
+      return res.status(404).json({ success: false, message: 'Haydovchi topilmadi' });
     }
 
     const { name, phone, status, licenseNumber, vehicleType } = req.body;
@@ -66,9 +99,12 @@ const updateDriver = async (req, res) => {
     if (vehicleType) driver.vehicleType = vehicleType;
 
     const updated = await driver.save();
-    res.json({ ...updated.toObject(), password: undefined });
+    const obj = updated.toObject();
+    delete obj.password;
+    res.json({ success: true, data: obj });
   } catch (error) {
-    res.status(500).json({ message: 'Server xatoligi' });
+    console.error('Update driver error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi' });
   }
 };
 
@@ -77,15 +113,81 @@ const updateDriver = async (req, res) => {
 // @access  Private/Admin
 const deleteDriver = async (req, res) => {
   try {
+    if (!checkDB(res)) return;
+
     const driver = await Driver.findById(req.params.id);
     if (!driver) {
-      return res.status(404).json({ message: 'Haydovchi topilmadi' });
+      return res.status(404).json({ success: false, message: 'Haydovchi topilmadi' });
     }
     await Driver.deleteOne({ _id: driver._id });
-    res.json({ message: "Haydovchi o'chirildi" });
+    res.json({ success: true, message: "Haydovchi o'chirildi" });
   } catch (error) {
-    res.status(500).json({ message: 'Server xatoligi' });
+    console.error('Delete driver error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi' });
   }
 };
 
-export { getDrivers, createDriver, updateDriver, deleteDriver };
+// @desc    Driver o'zining buyurtmalarini oladi
+// @route   GET /api/drivers/my-orders
+// @access  Private/Driver
+const getMyOrders = async (req, res) => {
+  try {
+    if (!checkDB(res)) return;
+
+    const driver = await Driver.findOne({ email: req.user.email });
+    if (!driver) {
+      return res.status(404).json({ success: false, message: 'Haydovchi topilmadi' });
+    }
+
+    const orders = await Order.find({ driver: driver._id })
+      .populate('client', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    console.error('Get my orders error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi', error: error.message });
+  }
+};
+
+// @desc    Driver buyurtma holatini yangilaydi
+// @route   PUT /api/drivers/orders/:orderId
+// @access  Private/Driver
+const updateOrderStatus = async (req, res) => {
+  try {
+    if (!checkDB(res)) return;
+
+    const driver = await Driver.findOne({ email: req.user.email });
+    if (!driver) {
+      return res.status(404).json({ success: false, message: 'Haydovchi topilmadi' });
+    }
+
+    const order = await Order.findOne({
+      _id: req.params.orderId,
+      driver: driver._id
+    });
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Buyurtma topilmadi yoki sizga tegishli emas" });
+    }
+
+    const { status } = req.body;
+    const allowedStatuses = ['Qabul qilindi', "Yo'lda", 'Yetkazildi'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: "Noto'g'ri holat" });
+    }
+
+    order.status = status;
+    await order.save();
+
+    res.json({
+      success: true,
+      data: { _id: order._id, status: order.status, trackingId: order.trackingId }
+    });
+  } catch (error) {
+    console.error('Update order status error:', error);
+    res.status(500).json({ success: false, message: 'Server xatoligi', error: error.message });
+  }
+};
+
+export { getDrivers, createDriver, updateDriver, deleteDriver, getMyOrders, updateOrderStatus };

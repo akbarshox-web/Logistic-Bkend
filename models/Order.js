@@ -1,15 +1,39 @@
 import mongoose from 'mongoose';
 
+/**
+ * ✅ Timeline event — buyurtma holati o'zgarganda yoziladi
+ * Har bir event'da: status, izoh, vaqt, kim tomonidan
+ */
+const timelineEventSchema = new mongoose.Schema({
+  status: {
+    type: String,
+    enum: ['Yangi', 'Qabul qilindi', "Yo'lda", 'Yetkazildi', 'Bekor qilindi'],
+    required: true,
+  },
+  note: {
+    type: String,
+    default: '',
+    maxlength: 500,
+  },
+  by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  byName: {
+    type: String,
+    default: 'Tizim',
+  },
+}, {
+  timestamps: { createdAt: true, updatedAt: false },
+});
+
 const orderSchema = new mongoose.Schema({
-  // Yuk ma'lumotlari
   cargoType: { type: String, required: true },
   weight: { type: Number, required: true },
 
-  // Yo'nalish
   from: { type: String, required: true },
   to: { type: String, required: true },
 
-  // Mijoz ma'lumotlari
   client: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -18,21 +42,19 @@ const orderSchema = new mongoose.Schema({
   clientName: { type: String },
   clientPhone: { type: String },
 
-  // Driver
   driver: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null
   },
 
-  // Holat
   status: {
     type: String,
     enum: ['Yangi', 'Qabul qilindi', 'Yo\'lda', 'Yetkazildi', 'Bekor qilindi'],
-    default: 'Yangi'
+    default: 'Yangi',
+    index: true,
   },
 
-  // Tracking ID — default orqali avtomatik generatsiya (unique validation xatosini oldini oladi)
   trackingId: {
     type: String,
     unique: true,
@@ -41,10 +63,24 @@ const orderSchema = new mongoose.Schema({
     }
   },
 
-  // Narx
   price: { type: Number, default: 0 },
 
+  // ✅ Timeline — buyurtma holati tarixi
+  timeline: [timelineEventSchema],
+
 }, { timestamps: true });
+
+// ✅ Yangi buyurtma yaratilganda avtomatik "Yangi" event qo'shish
+orderSchema.pre('save', function (next) {
+  if (this.isNew) {
+    this.timeline.push({
+      status: 'Yangi',
+      note: 'Buyurtma yaratildi',
+      byName: 'Tizim',
+    });
+  }
+  next();
+});
 
 const Order = mongoose.model('Order', orderSchema);
 export default Order;
