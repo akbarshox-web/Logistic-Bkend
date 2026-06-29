@@ -148,10 +148,23 @@ const updateOrder = asyncHandler(async (req, res) => {
   }
 
   const { status, driver, price, note } = req.body;
+
+  // ✅ Ruxsat etilgan statuslar
+  const allowedStatuses = ['Yangi', 'Qabul qilindi', "Yo'lda", 'Yetkazildi', 'Bekor qilindi'];
+  if (status !== undefined && !allowedStatuses.includes(status)) {
+    return res.status(400).json({ success: false, message: `Noto'g'ri status: ${status}` });
+  }
+
+  // ✅ previousStatus ni status o'zgartirishdan OLDIN olamiz
   const previousStatus = order.status;
 
   if (status && status !== order.status) {
-    pushTimeline(order, status, note || `Status "${order.status}" dan "${status}" ga o'zgartirildi`, req.user?.name || 'Admin');
+    pushTimeline(
+      order,
+      status,
+      note || `Status "${order.status}" dan "${status}" ga o'zgartirildi`,
+      req.user?.name || 'Admin'
+    );
 
     // Mijozga bildirishnoma
     if (order.client) {
@@ -171,24 +184,43 @@ const updateOrder = asyncHandler(async (req, res) => {
     }
     order.status = status;
   }
-  if (driver !== undefined) order.driver = driver || null;
-  if (price !== undefined) order.price = Number(price);
+
+  if (driver !== undefined) {
+    // ✅ driver valid ObjectId ekanligini tekshirish
+    if (driver && !mongoose.Types.ObjectId.isValid(driver)) {
+      return res.status(400).json({ success: false, message: "Noto'g'ri driver ID" });
+    }
+    order.driver = driver || null;
+  }
+
+  if (price !== undefined) {
+    const numPrice = Number(price);
+    if (Number.isNaN(numPrice) || numPrice < 0) {
+      return res.status(400).json({ success: false, message: 'Narx noto\'g\'ri' });
+    }
+    order.price = numPrice;
+  }
 
   const updated = await order.save();
   const populated = await updated.populate('driver', 'name email phone avatar vehicleType isOnline');
 
-  await logActivity({
-    type: previousStatus !== order.status ? 'order_status_changed' : 'order_updated',
-    actor: req.user._id,
-    actorRole: req.user.role,
-    actorName: req.user.name,
-    targetType: 'order',
-    targetId: order._id,
-    targetName: order.trackingId,
-    description: `Buyurtma #${order.trackingId} yangilandi`,
-    metadata: { previousStatus, newStatus: order.status },
-    ip: getClientIp(req),
-  });
+  // ✅ Activity log yozish (xato bo'lsa asosiy javobni buzmasligi uchun try/catch)
+  try {
+    await logActivity({
+      type: previousStatus !== order.status ? 'order_status_changed' : 'order_updated',
+      actor: req.user?._id,
+      actorRole: req.user?.role || 'admin',
+      actorName: req.user?.name || 'Admin',
+      targetType: 'order',
+      targetId: order._id,
+      targetName: order.trackingId,
+      description: `Buyurtma #${order.trackingId} yangilandi`,
+      metadata: { previousStatus, newStatus: order.status },
+      ip: getClientIp(req),
+    });
+  } catch (logErr) {
+    console.warn('⚠️ Activity log xatosi:', logErr.message);
+  }
 
   res.json({ success: true, data: populated });
 });

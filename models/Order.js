@@ -71,7 +71,8 @@ const orderSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ✅ Yangi buyurtma yaratilganda avtomatik "Yangi" event qo'shish
-orderSchema.pre('save', function (next) {
+// ⚠️ Mongoose 7+ da hooklar async bo'lsa, next chaqirilmaydi — faqat return qilamiz
+orderSchema.pre('save', function () {
   if (this.isNew) {
     this.timeline.push({
       status: 'Yangi',
@@ -79,7 +80,6 @@ orderSchema.pre('save', function (next) {
       byName: 'Tizim',
     });
   }
-  next();
 });
 
 const Order = mongoose.model('Order', orderSchema);
